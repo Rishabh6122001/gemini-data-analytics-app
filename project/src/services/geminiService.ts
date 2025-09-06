@@ -40,7 +40,7 @@ class GeminiService {
   async generateResponse(
     query: string
   ): Promise<{ answer: string; followUps: string[] }> {
-    // 👋 Handle greetings separately
+    // 👋 Greetings → friendly welcome
     if (this.isGreeting(query)) {
       return {
         answer: "👋 Hello! I’m your Data Analytics AI Assistant. How can I help you today?",
@@ -52,7 +52,7 @@ class GeminiService {
       };
     }
 
-    // 📊 Handle analytics queries
+    // 📊 Analytics queries → structured expert mode
     if (this.isDataAnalyticsQuery(query)) {
       try {
         const result = await this.model.generateContent({
@@ -108,12 +108,42 @@ ${query}
       }
     }
 
-    // ❓ Fallback for unrelated queries
-    return {
-      answer:
-        "🤖 I specialize in **data analytics, statistics, visualization, and BI**. Try asking me something like: '📊 Explain regression analysis' or 'How can I visualize sales trends in Power BI?'",
-      followUps: [],
-    };
+    // 💬 General conversation → natural chatbot response
+    try {
+      const result = await this.model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `
+You are a friendly conversational AI.
+
+Instructions:
+- Reply naturally and casually, like a human chat partner.
+- Be polite, engaging, and concise.
+- Adapt tone based on context (e.g., jokes if asked, gratitude if thanked).
+- Do NOT include FOLLOW_UPS here.
+
+Now reply to this user message:
+
+${query}
+                `,
+              },
+            ],
+          },
+        ],
+      });
+
+      const responseText = result.response.text();
+      return { answer: responseText, followUps: [] };
+    } catch (error) {
+      console.error("❌ Error calling Gemini API:", error);
+      return {
+        answer: "⚠️ I encountered an error while generating a response.",
+        followUps: [],
+      };
+    }
   }
 }
 
