@@ -8,22 +8,7 @@ import { geminiService } from '../services/geminiService';
 const STORAGE_KEY = "chat-history";
 
 export const ChatInterface: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return parsed.map((m: any) => ({
-          ...m,
-          timestamp: new Date(m.timestamp),
-        }));
-      } catch {
-        return [getInitialMessage()];
-      }
-    }
-    return [getInitialMessage()];
-  });
-
+  const [messages, setMessages] = useState<Message[]>([getInitialMessage()]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -36,22 +21,28 @@ export const ChatInterface: React.FC = () => {
         "👋 Hello! I'm your Data Analytics AI Assistant. I specialize in statistics, visualization, business intelligence, and data science. What would you like to explore?",
       role: 'assistant',
       timestamp: new Date(),
-      followUps: ["How do I clean messy datasets?", "What’s the best way to visualize trends?", "How to choose between regression models?"],
+      followUps: [
+        "How do I clean messy datasets?",
+        "What’s the best way to visualize trends?",
+        "How to choose between regression models?",
+      ],
     };
   }
 
-  // Save history
+  // Save chat for this session only
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(messages.map((m) => ({ ...m })))
-    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
   }, [messages]);
 
   // Auto scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Clear previous session history on mount
+  useEffect(() => {
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
 
   const sendMessage = async (query: string) => {
     const userMessage: Message = {
