@@ -15,6 +15,12 @@ class GeminiService {
     this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   }
 
+  private isGreeting(query: string): boolean {
+    const greetings = ["hi", "hello", "hey", "good morning", "good evening"];
+    const q = query.toLowerCase().trim();
+    return greetings.some((g) => q.startsWith(g));
+  }
+
   private isDataAnalyticsQuery(query: string): boolean {
     const keywords = [
       "data", "analytics", "analysis", "statistics", "dataset", "database",
@@ -34,22 +40,28 @@ class GeminiService {
   async generateResponse(
     query: string
   ): Promise<{ answer: string; followUps: string[] }> {
-    if (!this.isDataAnalyticsQuery(query)) {
+    // 👋 Handle greetings separately
+    if (this.isGreeting(query)) {
       return {
-        answer:
-          "🤖 I can only assist with data analytics queries. Please ask about statistics, visualization, BI, or data science.",
-        followUps: [],
+        answer: "👋 Hello! I’m your Data Analytics AI Assistant. How can I help you today?",
+        followUps: [
+          "📊 What are some common data visualization techniques?",
+          "📈 How do I analyze sales trends?",
+          "🤖 What is machine learning in data analytics?"
+        ],
       };
     }
 
-    try {
-      const result = await this.model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `
+    // 📊 Handle analytics queries
+    if (this.isDataAnalyticsQuery(query)) {
+      try {
+        const result = await this.model.generateContent({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `
 You are a specialized data analytics expert chatbot.
 
 Instructions:
@@ -63,37 +75,45 @@ FOLLOW_UPS: ["Question 1", "Question 2", "Question 3"]
 Now answer this query:
 
 ${query}
-                `,
-              },
-            ],
-          },
-        ],
-      });
+                  `,
+                },
+              ],
+            },
+          ],
+        });
 
-      const rawText = result.response.text();
+        const rawText = result.response.text();
 
-      // Extract follow-ups if model included them
-      let followUps: string[] = [];
-      const match = rawText.match(/FOLLOW_UPS:\s*(\[.*\])/);
-      if (match) {
-        try {
-          followUps = JSON.parse(match[1]);
-        } catch (err) {
-          console.warn("⚠️ Failed to parse follow-ups:", err);
+        // Extract follow-ups if present
+        let followUps: string[] = [];
+        const match = rawText.match(/FOLLOW_UPS:\s*(\[.*\])/);
+        if (match) {
+          try {
+            followUps = JSON.parse(match[1]);
+          } catch (err) {
+            console.warn("⚠️ Failed to parse follow-ups:", err);
+          }
         }
+
+        // Clean main answer
+        const cleanAnswer = rawText.replace(/FOLLOW_UPS:\s*\[.*\]/, "").trim();
+
+        return { answer: cleanAnswer, followUps };
+      } catch (error) {
+        console.error("❌ Error calling Gemini API:", error);
+        return {
+          answer: "⚠️ I encountered an error while generating a response.",
+          followUps: [],
+        };
       }
-
-      // Remove follow-up JSON from main answer
-      const cleanAnswer = rawText.replace(/FOLLOW_UPS:\s*\[.*\]/, "").trim();
-
-      return { answer: cleanAnswer, followUps };
-    } catch (error) {
-      console.error("❌ Error calling Gemini API:", error);
-      return {
-        answer: "⚠️ I encountered an error while generating a response.",
-        followUps: [],
-      };
     }
+
+    // ❓ Fallback for unrelated queries
+    return {
+      answer:
+        "🤖 I specialize in **data analytics, statistics, visualization, and BI**. Try asking me something like: '📊 Explain regression analysis' or 'How can I visualize sales trends in Power BI?'",
+      followUps: [],
+    };
   }
 }
 
