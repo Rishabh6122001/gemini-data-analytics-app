@@ -9,36 +9,19 @@ const STORAGE_KEY = "chat-history";
 
 export const ChatInterface: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>(() => {
-    // Load from localStorage on init
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         return parsed.map((m: any) => ({
           ...m,
-          timestamp: new Date(m.timestamp), // restore Date object
+          timestamp: new Date(m.timestamp),
         }));
       } catch {
-        return [
-          {
-            id: '1',
-            content:
-              "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
-            role: 'assistant',
-            timestamp: new Date(),
-          },
-        ];
+        return [getInitialMessage()];
       }
     }
-    return [
-      {
-        id: '1',
-        content:
-          "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
-        role: 'assistant',
-        timestamp: new Date(),
-      },
-    ];
+    return [getInitialMessage()];
   });
 
   const [inputValue, setInputValue] = useState('');
@@ -46,7 +29,18 @@ export const ChatInterface: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 🔄 Save messages to localStorage whenever they change
+  function getInitialMessage(): Message {
+    return {
+      id: '1',
+      content:
+        "👋 Hello! I'm your Data Analytics AI Assistant. I specialize in statistics, visualization, business intelligence, and data science. What would you like to explore?",
+      role: 'assistant',
+      timestamp: new Date(),
+      followUps: ["How do I clean messy datasets?", "What’s the best way to visualize trends?", "How to choose between regression models?"],
+    };
+  }
+
+  // Save history
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEY,
@@ -54,62 +48,60 @@ export const ChatInterface: React.FC = () => {
     );
   }, [messages]);
 
+  // Auto scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
-
+  const sendMessage = async (query: string) => {
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: inputValue.trim(),
+      content: query,
       role: 'user',
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputValue('');
     setIsLoading(true);
+    setInputValue('');
 
     try {
-      const response = await geminiService.generateResponse(userMessage.content);
+      const { answer, followUps } = await geminiService.generateResponse(query);
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: response,
+        content: answer,
         role: 'assistant',
         timestamp: new Date(),
+        followUps,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content:
-          "⚠️ Sorry, something went wrong while fetching the response. Please try again later.",
-        role: 'assistant',
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          content:
+            "⚠️ Sorry, something went wrong while fetching the response. Please try again.",
+          role: 'assistant',
+          timestamp: new Date(),
+        },
+      ]);
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
     }
   };
 
-  const clearConversation = () => {
-    const initialMessage: Message = {
-      id: '1',
-      content:
-        "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
-      role: 'assistant',
-      timestamp: new Date(),
-    };
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+    sendMessage(inputValue.trim());
+  };
 
-    setMessages([initialMessage]);
+  const clearConversation = () => {
+    setMessages([getInitialMessage()]);
     localStorage.removeItem(STORAGE_KEY);
   };
 
@@ -130,32 +122,48 @@ export const ChatInterface: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={clearConversation}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Clear conversation"
-            >
-              <RefreshCw size={20} />
-            </button>
-          </div>
+          <button
+            onClick={clearConversation}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Clear conversation"
+          >
+            <RefreshCw size={20} />
+          </button>
         </div>
       </div>
 
-      {/* Messages Area */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+            <div key={message.id} className="mb-4">
+              <MessageBubble message={message} />
+
+              {/* Follow-up suggestions */}
+              {message.role === 'assistant' &&
+                message.followUps &&
+                message.followUps.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {message.followUps.map((q, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => sendMessage(q)}
+                        className="text-sm px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </div>
           ))}
 
           {isLoading && <LoadingBubble />}
-
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input Area */}
+      {/* Input */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="flex gap-4">
@@ -165,25 +173,22 @@ export const ChatInterface: React.FC = () => {
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Ask about data analysis, statistics, visualization, or any analytics topic..."
+                placeholder="Ask about data analysis, statistics, visualization..."
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                 disabled={isLoading}
                 autoFocus
               />
             </div>
-
             <button
               type="submit"
               disabled={!inputValue.trim() || isLoading}
-              className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
             >
               <Send size={20} />
             </button>
           </form>
-
           <div className="mt-2 text-xs text-gray-500 text-center">
-            This AI specializes in data analytics. Ask about statistics, data
-            visualization, business intelligence, and more.
+            This AI specializes in data analytics. Ask about statistics, visualization, BI, and more.
           </div>
         </div>
       </div>

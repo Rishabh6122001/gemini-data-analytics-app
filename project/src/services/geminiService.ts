@@ -16,27 +16,30 @@ class GeminiService {
   }
 
   private isDataAnalyticsQuery(query: string): boolean {
-    const dataAnalyticsKeywords = [
-      "data", "analytics", "analysis", "statistics", "statistical", "dataset", "database",
-      "visualization", "chart", "graph", "dashboard", "reporting", "metrics", "kpi",
-      "sql", "python", "r programming", "pandas", "numpy", "matplotlib", "seaborn",
+    const keywords = [
+      "data", "analytics", "analysis", "statistics", "dataset", "database",
+      "visualization", "chart", "graph", "dashboard", "reporting", "metrics",
+      "sql", "python", "pandas", "numpy", "matplotlib", "seaborn",
       "tableau", "power bi", "excel", "regression", "correlation", "clustering",
-      "machine learning", "predictive", "forecasting", "trend", "pattern",
+      "machine learning", "forecasting", "trend", "pattern",
       "business intelligence", "etl", "data warehouse", "data mining", "big data",
-      "hadoop", "spark", "mongodb", "postgresql", "mysql", "snowflake",
-      "data science", "data scientist", "data analyst", "hypothesis testing",
-      "a/b testing", "statistical significance", "confidence interval",
-      "data cleaning", "data preprocessing", "feature engineering", "outlier",
-      "distribution", "variance", "standard deviation", "mean", "median", "mode",
+      "spark", "mongodb", "postgresql", "mysql", "snowflake",
+      "data science", "hypothesis testing", "a/b testing",
+      "confidence interval", "data cleaning", "feature engineering",
     ];
-
-    const queryLower = query.toLowerCase();
-    return dataAnalyticsKeywords.some((keyword) => queryLower.includes(keyword));
+    const q = query.toLowerCase();
+    return keywords.some((kw) => q.includes(kw));
   }
 
-  async generateResponse(query: string): Promise<string> {
+  async generateResponse(
+    query: string
+  ): Promise<{ answer: string; followUps: string[] }> {
     if (!this.isDataAnalyticsQuery(query)) {
-      return "🤖 I can only assist with data analytics queries. Please ask questions about statistics, data analysis, visualization, BI, or data science.";
+      return {
+        answer:
+          "🤖 I can only assist with data analytics queries. Please ask about statistics, visualization, BI, or data science.",
+        followUps: [],
+      };
     }
 
     try {
@@ -47,14 +50,17 @@ class GeminiService {
             parts: [
               {
                 text: `
-You are a specialized data analytics expert. 
-When answering, follow these formatting rules:
-- Do NOT use markdown symbols (#, *, **). 
-- Use emojis/icons for headings, lists, and highlights (📊, ✅, ⚠️).
-- Structure content with indentation and spacing.
-- Make it easy to read like professional notes, similar to how ChatGPT replies.
+You are a specialized data analytics expert chatbot.
 
-Now answer clearly and practically:
+Instructions:
+- Provide a clear, structured, professional answer.
+- Use emojis/icons for sections (📊, ✅, ⚠️).
+- Avoid markdown symbols (#, *, **).
+- After answering, suggest 3 short follow-up questions relevant to the query.
+- Format follow-ups in JSON array like:
+FOLLOW_UPS: ["Question 1", "Question 2", "Question 3"]
+
+Now answer this query:
 
 ${query}
                 `,
@@ -64,10 +70,29 @@ ${query}
         ],
       });
 
-      return result.response.text();
+      const rawText = result.response.text();
+
+      // Extract follow-ups if model included them
+      let followUps: string[] = [];
+      const match = rawText.match(/FOLLOW_UPS:\s*(\[.*\])/);
+      if (match) {
+        try {
+          followUps = JSON.parse(match[1]);
+        } catch (err) {
+          console.warn("⚠️ Failed to parse follow-ups:", err);
+        }
+      }
+
+      // Remove follow-up JSON from main answer
+      const cleanAnswer = rawText.replace(/FOLLOW_UPS:\s*\[.*\]/, "").trim();
+
+      return { answer: cleanAnswer, followUps };
     } catch (error) {
       console.error("❌ Error calling Gemini API:", error);
-      throw error;
+      return {
+        answer: "⚠️ I encountered an error while generating a response.",
+        followUps: [],
+      };
     }
   }
 }
