@@ -1,28 +1,58 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, BarChart3, Settings, RefreshCw } from 'lucide-react';
+import { Send, BarChart3, RefreshCw } from 'lucide-react';
 import { Message } from '../types';
 import { MessageBubble } from './MessageBubble';
 import { LoadingBubble } from './LoadingBubble';
 import { geminiService } from '../services/geminiService';
 
-interface ChatInterfaceProps {
-  onResetApiKey: () => void;
-}
+const STORAGE_KEY = "chat-history";
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onResetApiKey }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content:
-        "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
-      role: 'assistant',
-      timestamp: new Date(),
-    },
-  ]);
+export const ChatInterface: React.FC = () => {
+  const [messages, setMessages] = useState<Message[]>(() => {
+    // Load from localStorage on init
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp), // restore Date object
+        }));
+      } catch {
+        return [
+          {
+            id: '1',
+            content:
+              "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
+            role: 'assistant',
+            timestamp: new Date(),
+          },
+        ];
+      }
+    }
+    return [
+      {
+        id: '1',
+        content:
+          "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
+        role: 'assistant',
+        timestamp: new Date(),
+      },
+    ];
+  });
+
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 🔄 Save messages to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(messages.map((m) => ({ ...m })))
+    );
+  }, [messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -57,9 +87,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onResetApiKey }) =
     } catch (error) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `I apologize, but I encountered an error while processing your request. Please check your API key in the .env file and try again. Error: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
+        content:
+          "⚠️ Sorry, something went wrong while fetching the response. Please try again later.",
         role: 'assistant',
         timestamp: new Date(),
       };
@@ -72,15 +101,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onResetApiKey }) =
   };
 
   const clearConversation = () => {
-    setMessages([
-      {
-        id: '1',
-        content:
-          "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
-        role: 'assistant',
-        timestamp: new Date(),
-      },
-    ]);
+    const initialMessage: Message = {
+      id: '1',
+      content:
+        "Hello! I'm your Data Analytics AI Assistant. I'm here to help you with all your data analysis, statistics, visualization, and business intelligence questions. What would you like to know?",
+      role: 'assistant',
+      timestamp: new Date(),
+    };
+
+    setMessages([initialMessage]);
+    localStorage.removeItem(STORAGE_KEY);
   };
 
   return (
@@ -107,13 +137,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onResetApiKey }) =
               title="Clear conversation"
             >
               <RefreshCw size={20} />
-            </button>
-            <button
-              onClick={onResetApiKey}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Change API key"
-            >
-              <Settings size={20} />
             </button>
           </div>
         </div>

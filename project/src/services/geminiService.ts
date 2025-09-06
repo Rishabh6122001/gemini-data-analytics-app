@@ -4,14 +4,15 @@ class GeminiService {
   private model;
 
   constructor() {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    // 🔑 Hardcoded API Key (replace with yours)
+    const apiKey = "AIzaSyBtfINXuN8-3aDQKNJneRxLtI8-rgNt_Gs";
+
     if (!apiKey) {
-      throw new Error("Gemini API key not configured. Set VITE_GEMINI_API_KEY in your .env file.");
+      throw new Error("Gemini API key is missing.");
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
     this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   }
 
   private isDataAnalyticsQuery(query: string): boolean {
@@ -35,7 +36,7 @@ class GeminiService {
 
   async generateResponse(query: string): Promise<string> {
     if (!this.isDataAnalyticsQuery(query)) {
-      return "I’m designed to help only with data analytics queries. Please ask questions related to data analysis, statistics, visualization, BI, or data science.";
+      return "🤖 I can only assist with data analytics queries. Please ask questions about statistics, data analysis, visualization, BI, or data science.";
     }
 
     try {
@@ -48,12 +49,12 @@ class GeminiService {
                 text: `
 You are a specialized data analytics expert. 
 When answering, follow these formatting rules:
-- Do NOT use markdown symbols like #, *, or **. 
-- Use emojis/icons for headings, lists, and highlights (e.g., 📊, ✅, ⚠️).
-- Structure content clearly with indentation and line breaks.
-- Make it easy to read like professional notes, similar to how ChatGPT replies in chat.
+- Do NOT use markdown symbols (#, *, **). 
+- Use emojis/icons for headings, lists, and highlights (📊, ✅, ⚠️).
+- Structure content with indentation and spacing.
+- Make it easy to read like professional notes, similar to how ChatGPT replies.
 
-Now, answer this query with clear, practical, structured insights:
+Now answer clearly and practically:
 
 ${query}
                 `,
@@ -65,7 +66,7 @@ ${query}
 
       return result.response.text();
     } catch (error) {
-      console.error("Error calling Gemini API:", error);
+      console.error("❌ Error calling Gemini API:", error);
       throw error;
     }
   }
