@@ -4,9 +4,8 @@ class GeminiService {
   private model;
 
   constructor() {
-    // 🔑 Hardcoded API Key (replace with yours)
-    const apiKey = "AIzaSyBtfINXuN8-3aDQKNJneRxLtI8-rgNt_Gs";
-
+    // 🔑 Hardcoded API Key
+    const apiKey = "YOUR_API_KEY_HERE";
     if (!apiKey) {
       throw new Error("Gemini API key is missing.");
     }
@@ -15,10 +14,14 @@ class GeminiService {
     this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   }
 
-  private isGreeting(query: string): boolean {
-    const greetings = ["hi", "hello", "hey", "good morning", "good evening"];
+  private isCasualConversation(query: string): boolean {
+    const casualKeywords = [
+      "hi", "hello", "hey", "thanks", "thank you", "ok", "okay",
+      "good morning", "good evening", "good night", "how are you",
+      "bye", "see you", "take care"
+    ];
     const q = query.toLowerCase().trim();
-    return greetings.some((g) => q.startsWith(g));
+    return casualKeywords.some((kw) => q.includes(kw));
   }
 
   private isDataAnalyticsQuery(query: string): boolean {
@@ -31,7 +34,7 @@ class GeminiService {
       "business intelligence", "etl", "data warehouse", "data mining", "big data",
       "spark", "mongodb", "postgresql", "mysql", "snowflake",
       "data science", "hypothesis testing", "a/b testing",
-      "confidence interval", "data cleaning", "feature engineering",
+      "confidence interval", "data cleaning", "feature engineering"
     ];
     const q = query.toLowerCase();
     return keywords.some((kw) => q.includes(kw));
@@ -40,19 +43,19 @@ class GeminiService {
   async generateResponse(
     query: string
   ): Promise<{ answer: string; followUps: string[] }> {
-    // 👋 Greetings → friendly welcome
-    if (this.isGreeting(query)) {
+    // 👋 Casual conversation
+    if (this.isCasualConversation(query)) {
       return {
-        answer: "👋 Hello! I’m your Data Analytics AI Assistant. How can I help you today?",
+        answer: "😊 Sure! I’m here to help you with data analytics whenever you’re ready.",
         followUps: [
-          "📊 What are some common data visualization techniques?",
-          "📈 How do I analyze sales trends?",
-          "🤖 What is machine learning in data analytics?"
+          "📊 Want me to explain regression analysis?",
+          "📈 Curious about sales trend forecasting?",
+          "🤖 Should I show how machine learning fits into analytics?"
         ],
       };
     }
 
-    // 📊 Analytics queries → structured expert mode
+    // 📊 Data analytics queries
     if (this.isDataAnalyticsQuery(query)) {
       try {
         const result = await this.model.generateContent({
@@ -95,7 +98,6 @@ ${query}
           }
         }
 
-        // Clean main answer
         const cleanAnswer = rawText.replace(/FOLLOW_UPS:\s*\[.*\]/, "").trim();
 
         return { answer: cleanAnswer, followUps };
@@ -108,42 +110,16 @@ ${query}
       }
     }
 
-    // 💬 General conversation → natural chatbot response
-    try {
-      const result = await this.model.generateContent({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `
-You are a friendly conversational AI.
-
-Instructions:
-- Reply naturally and casually, like a human chat partner.
-- Be polite, engaging, and concise.
-- Adapt tone based on context (e.g., jokes if asked, gratitude if thanked).
-- Do NOT include FOLLOW_UPS here.
-
-Now reply to this user message:
-
-${query}
-                `,
-              },
-            ],
-          },
-        ],
-      });
-
-      const responseText = result.response.text();
-      return { answer: responseText, followUps: [] };
-    } catch (error) {
-      console.error("❌ Error calling Gemini API:", error);
-      return {
-        answer: "⚠️ I encountered an error while generating a response.",
-        followUps: [],
-      };
-    }
+    // 🚫 Block unrelated questions
+    return {
+      answer:
+        "🤖 I’m designed only for **data analytics, statistics, visualization, and BI**. Try asking me about regression, SQL, or dashboards instead.",
+      followUps: [
+        "📊 What’s regression analysis?",
+        "📈 How to visualize trends?",
+        "🛠️ What’s data cleaning?",
+      ],
+    };
   }
 }
 
