@@ -19,7 +19,7 @@ class GeminiService {
   private isCasualConversation(query: string): boolean {
     const casual = [
       "hi", "hello", "hey", "good morning", "good evening",
-      "how are you", "i am fine", "thanks", "thank you",
+      "how are you", "i am fine", "thanks", "thank you", "thank u",
       "what's up", "ok", "okay", "cool", "nice", "bye", "goodbye",
       "see you", "take care"
     ];
