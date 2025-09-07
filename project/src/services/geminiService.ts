@@ -6,7 +6,7 @@ class GeminiService {
   private lastChart: any = null;
 
   constructor() {
-    const apiKey = "AIzaSyA6akDT02z4sS-y2H48RtxpuLpR3ahwifg"; // 🔑 put your Gemini API key here
+    const apiKey = "AIzaSyA6akDT02z4sS-y2H48RtxpuLpR3ahwifg"; // 🔑 replace with your Gemini API key
     if (!apiKey) throw new Error("Gemini API key is missing.");
 
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -63,6 +63,17 @@ class GeminiService {
         answer: "👋 Hey there! I’m your Data Analytics Assistant.",
         followUps: ["📊 Show me a bar chart example", "📈 Sales trend?", "🗂️ Upload dataset?"],
         type: "casual"
+      };
+      this.chatHistory.push({ role: "model", content: response.answer });
+      return response;
+    }
+
+    // 🚫 Out-of-domain check (important!)
+    if (!this.isDataAnalyticsQuery(query) && dataset.length === 0) {
+      const response = {
+        answer: "⚡ Oops, that’s outside my scope!\nI can only help with data analytics, charts, insights, and statistics.",
+        followUps: ["📊 Show me a bar chart", "📈 Visualize sales trends", "🧹 How do I clean messy data?"],
+        type: "out-of-domain"
       };
       this.chatHistory.push({ role: "model", content: response.answer });
       return response;
