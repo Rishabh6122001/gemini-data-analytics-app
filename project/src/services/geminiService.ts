@@ -13,41 +13,53 @@ class GeminiService {
     this.model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   }
 
-  // 👋 Casual conversation check
-  private isCasualConversation(query: string): boolean {
-    const casualKeywords = [
-      "hi", "hello", "hey", "thanks", "thank you",
-      "ok", "okay", "good morning", "good evening", "good night",
-      "how are you", "bye", "see you", "take care"
-    ];
-    return casualKeywords.some((kw) => query.toLowerCase().includes(kw));
+  // 👋 Handle casual conversation
+  private async handleCasualConversation(query: string): Promise<string | null> {
+    const text = query.trim().toLowerCase();
+
+    if (/thank(s| you| u)?|thx+|ty+/.test(text)) return "You're welcome! 😊";
+    if (/^(hi+|hello+|hey+|heyyy+|hiii+)$/i.test(text)) return "👋 Hey there!";
+    if (/bye+|see you|take care|byeee/i.test(text)) return "Goodbye! Take care 👋";
+    if (/good\s*morning|mrnng+|gm+/i.test(text)) return "🌞 Good morning!";
+    if (/good\s*evening|ge+/i.test(text)) return "🌆 Good evening!";
+    if (/good\s*night|gdnite+|gn+/i.test(text)) return "🌙 Good night!";
+    if (/how\s*are\s*you|hw r u|hru/i.test(text)) return "I'm doing great, thanks for asking! How about you?";
+    if (/ok(ay+)?|okk+|k+/.test(text)) return "👍 Okay!";
+
+    return null;
   }
 
-  // 📊 Smarter Analytics Query Check (keywords + Gemini fallback + tolerance for gibberish)
+  // 🌀 Detect gibberish
+  private isGibberish(text: string): boolean {
+    if (text.length < 3) return true;
+    if (!/[aeiou]/i.test(text)) return true; // no vowels
+    if (/^(.)\1{2,}$/.test(text)) return true; // repeated characters
+    if (/^[bcdfghjklmnpqrstvwxyz]{5,}$/i.test(text)) return true; // consonant mash
+    return false;
+  }
+
+  // 📊 Check if query is analytics-related
   private async isDataAnalyticsQuery(query: string): Promise<boolean> {
     const text = query.toLowerCase();
 
-    // ✅ Fast path: obvious analytics/statistics terms
     const quickPatterns = [
       /p[\s-]?value/, /z[\s-]?score/, /t[\s-]?test/,
       /chi[\s-]?square/, /anova/, /regression/,
       /correlation/, /distribution/, /forecast/,
       /probability/, /variance/, /standard deviation/,
       /mean/, /median/, /mode/, /outlier/,
-      /clustering/, /classification/, /machine learning/
+      /clustering/, /classification/, /machine learning/,
+      /data/, /dataset/, /chart/, /visualize/, /insight/, /trend/
     ];
     if (quickPatterns.some((p) => p.test(text))) return true;
 
-    // 🔮 AI fallback: let Gemini interpret intent, even if messy
     try {
       const check = await this.model.generateContent({
         contents: [{
           role: "user",
           parts: [{
             text: `You are an intent classifier.
-Determine if the following query is related to data analytics, statistics, data science, or visualization.
-Even if the wording is messy or unclear, decide based on meaning.
-
+Decide if this query is related to data analytics, statistics, data science, or visualization.
 Answer only with "YES" or "NO".
 
 Query: "${query}"`
@@ -56,16 +68,9 @@ Query: "${query}"`
       });
 
       const reply = check.response.text().trim().toLowerCase();
-
-      // ✅ Default to YES if unsure (safer to answer than refuse)
-      if (reply.includes("yes")) return true;
-      if (reply.includes("no")) return false;
-      return true;
-
-    } catch (err) {
-      console.error("⚠️ Gemini classification error:", err);
-      // Fallback safe: assume it's analytics
-      return true;
+      return reply.includes("yes");
+    } catch {
+      return false; // fallback
     }
   }
 
@@ -89,13 +94,13 @@ Query: "${query}"`
     fileName: string | null = null
   ): Promise<{ answer: string; followUps: string[]; type: string; chart?: any }> {
 
-    // Save user query
     this.chatHistory.push({ role: "user", content: query });
 
-    // 👋 Casual conversation
-    if (this.isCasualConversation(query)) {
+    // 👋 Casual
+    const casualResponse = await this.handleCasualConversation(query);
+    if (casualResponse) {
       const response = {
-        answer: "👋 Hey there! I’m your Data Analytics Assistant.",
+        answer: casualResponse,
         followUps: ["📊 Show me a bar chart example", "📈 Sales trend?", "🗂️ Upload dataset?"],
         type: "casual"
       };
@@ -103,11 +108,22 @@ Query: "${query}"`
       return response;
     }
 
-    // 🚫 Out-of-domain check (smarter now)
+    // 🚫 Gibberish check
+    if (this.isGibberish(query)) {
+      const response = {
+        answer: "🤔 Sorry, I didn’t quite get that. Could you rephrase?",
+        followUps: ["📊 Show me a chart example", "📈 Sales trend?", "🧹 Clean messy data?"],
+        type: "gibberish"
+      };
+      this.chatHistory.push({ role: "model", content: response.answer });
+      return response;
+    }
+
+    // 🚫 Out-of-domain
     const isAnalytics = await this.isDataAnalyticsQuery(query);
     if (!isAnalytics && dataset.length === 0) {
       const response = {
-        answer: "⚡ Oops, that’s outside my scope!\nI can only help with data analytics, charts, insights, and statistics.",
+        answer: "⚡ That’s outside my scope!\nI can help with data analytics, statistics, charts, and insights only.",
         followUps: ["📊 Show me a bar chart", "📈 Visualize sales trends", "🧹 How do I clean messy data?"],
         type: "out-of-domain"
       };
@@ -115,11 +131,11 @@ Query: "${query}"`
       return response;
     }
 
-    // 🔄 Reuse last chart when asked "above/previous values"
+    // 🔄 Reuse chart
     if (dataset.length === 0 && /above|previous|earlier|that data/i.test(query) && this.lastChart) {
       const response = {
         answer: "✅ Using the previously shared dataset to create your chart.",
-        followUps: ["📈 Show as line chart", "🟠 Show as pie chart", "🔄 Compare with another column"],
+        followUps: ["📈 Line chart?", "🟠 Pie chart?", "🔄 Compare with another column"],
         type: "analytics",
         chart: this.lastChart
       };
@@ -127,7 +143,7 @@ Query: "${query}"`
       return response;
     }
 
-    // 📂 If dataset uploaded → build chart
+    // 📂 Dataset → chart
     if (dataset.length > 0) {
       const { xKey, yKey } = this.detectKeys(dataset);
       this.lastChart = { type: "bar", data: dataset, xKey, yKey };
@@ -142,24 +158,36 @@ Query: "${query}"`
       return response;
     }
 
-    // 🤖 Query Gemini with history
+    // 🆕 Handle follow-ups like "in detail"
+    const followUpPatterns = /(in detail|explain|explain more|explain again|clarify|why|how|tell me more|expand|give example|elaborate)/i;
+    let contextPrompt = query;
+
+    if (followUpPatterns.test(query)) {
+      const lastUser = [...this.chatHistory].reverse().find(m => m.role === "user" && m.content !== query);
+      const lastModel = [...this.chatHistory].reverse().find(m => m.role === "model");
+
+      if (lastUser && lastModel) {
+        contextPrompt = `The user previously asked: "${lastUser.content}"\nYou answered: "${lastModel.content}".\n\nNow the user says: "${query}".\n\n👉 Expand your previous answer in much more detail, with clear explanation, structured points, and practical examples.`;
+      }
+    }
+
+    // 🤖 Gemini call (only for analytics scope)
     try {
       const result = await this.model.generateContent({
-        contents: this.chatHistory.map(m => ({
-          role: m.role,
-          parts: [{ text: m.content }]
-        }))
+        contents: [{ role: "user", parts: [{ text: contextPrompt }] }]
       });
 
       let rawText = result.response.text();
       rawText = rawText.replace(/```json|```/g, "").trim();
 
+      // Optional chart parsing
       let chart: any = undefined;
       const chartMatch = rawText.match(/CHART:\s*({[\s\S]*?})/);
       if (chartMatch) {
         try { chart = JSON.parse(chartMatch[1]); this.lastChart = chart; } catch {}
       }
 
+      // Extract follow-ups
       let followUps: string[] = [];
       const followMatch = rawText.match(/FOLLOW_UPS:\s*(\[.*\])/s);
       if (followMatch) {
@@ -184,7 +212,7 @@ Query: "${query}"`
     } catch (error) {
       console.error("❌ Gemini API error:", error);
       return {
-        answer: "⚠️ Something went wrong.",
+        answer: "⚠️ Something went wrong while generating a response.",
         followUps: ["📊 Bar chart?", "📈 Line chart?", "🟠 Pie chart?"],
         type: "error"
       };
