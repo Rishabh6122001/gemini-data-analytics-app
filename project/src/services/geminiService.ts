@@ -23,15 +23,33 @@ class GeminiService {
     return casualKeywords.some((kw) => query.toLowerCase().includes(kw));
   }
 
-  // 📊 Analytics query check
+  // 📊 Analytics query check (improved with concept list)
   private isDataAnalyticsQuery(query: string): boolean {
+    const text = query.toLowerCase();
+
+    // Core concepts in statistics / data science
+    const analyticsConcepts = [
+      "p-value","hypothesis","confidence interval","anova",
+      "chi-square","regression","correlation","standard deviation",
+      "variance","normal distribution","z-score","t-test",
+      "probability","forecast","time series","outlier",
+      "mean","median","mode","distribution","clustering",
+      "classification","machine learning","data cleaning","feature"
+    ];
+
+    if (analyticsConcepts.some(concept => text.includes(concept))) {
+      return true;
+    }
+
+    // Generic fallback keywords
     const keywords = [
       "data","analytics","analysis","statistics","dataset","table",
       "visualization","chart","graph","dashboard","reporting",
       "sql","python","excel","tableau","power bi",
-      "regression","forecasting","trend","pattern","insights"
+      "trend","pattern","insight","model"
     ];
-    return keywords.some((kw) => query.toLowerCase().includes(kw));
+
+    return keywords.some((kw) => text.includes(kw));
   }
 
   // 🔎 Detect chart keys
@@ -68,7 +86,7 @@ class GeminiService {
       return response;
     }
 
-    // 🚫 Out-of-domain check (important!)
+    // 🚫 Out-of-domain check
     if (!this.isDataAnalyticsQuery(query) && dataset.length === 0) {
       const response = {
         answer: "⚡ Oops, that’s outside my scope!\nI can only help with data analytics, charts, insights, and statistics.",
