@@ -16,60 +16,56 @@ class GeminiService {
   // 👋 Casual conversation check
   private isCasualConversation(query: string): boolean {
     const casualKeywords = [
-      "hi","hello","hey","thanks","thank you",
-      "ok","okay","good morning","good evening","good night",
-      "how are you","bye","see you","take care"
+      "hi", "hello", "hey", "thanks", "thank you",
+      "ok", "okay", "good morning", "good evening", "good night",
+      "how are you", "bye", "see you", "take care"
     ];
     return casualKeywords.some((kw) => query.toLowerCase().includes(kw));
   }
 
-  // 📊 Hybrid Analytics Query Check (keywords + Gemini fallback)
+  // 📊 Smarter Analytics Query Check (keywords + Gemini fallback + tolerance for gibberish)
   private async isDataAnalyticsQuery(query: string): Promise<boolean> {
     const text = query.toLowerCase();
 
-    // Core concepts in statistics / data science
-    const analyticsConcepts = [
-      "p-value","hypothesis","confidence interval","anova",
-      "chi-square","regression","correlation","standard deviation",
-      "variance","normal distribution","z-score","t-test",
-      "probability","forecast","time series","outlier",
-      "mean","median","mode","distribution","clustering",
-      "classification","machine learning","data cleaning","feature"
+    // ✅ Fast path: obvious analytics/statistics terms
+    const quickPatterns = [
+      /p[\s-]?value/, /z[\s-]?score/, /t[\s-]?test/,
+      /chi[\s-]?square/, /anova/, /regression/,
+      /correlation/, /distribution/, /forecast/,
+      /probability/, /variance/, /standard deviation/,
+      /mean/, /median/, /mode/, /outlier/,
+      /clustering/, /classification/, /machine learning/
     ];
+    if (quickPatterns.some((p) => p.test(text))) return true;
 
-    if (analyticsConcepts.some(concept => text.includes(concept))) {
-      return true;
-    }
-
-    // Generic fallback keywords
-    const keywords = [
-      "data","analytics","analysis","statistics","dataset","table",
-      "visualization","chart","graph","dashboard","reporting",
-      "sql","python","excel","tableau","power bi",
-      "trend","pattern","insight","model"
-    ];
-
-    if (keywords.some((kw) => text.includes(kw))) {
-      return true;
-    }
-
-    // 🔮 Ask Gemini if still unsure
+    // 🔮 AI fallback: let Gemini interpret intent, even if messy
     try {
       const check = await this.model.generateContent({
         contents: [{
           role: "user",
           parts: [{
-            text: `Classify the following query strictly as YES (analytics-related) or NO (not analytics-related).
+            text: `You are an intent classifier.
+Determine if the following query is related to data analytics, statistics, data science, or visualization.
+Even if the wording is messy or unclear, decide based on meaning.
+
+Answer only with "YES" or "NO".
+
 Query: "${query}"`
           }]
         }]
       });
 
-      const reply = check.response.text().toLowerCase();
-      return reply.includes("yes");
+      const reply = check.response.text().trim().toLowerCase();
+
+      // ✅ Default to YES if unsure (safer to answer than refuse)
+      if (reply.includes("yes")) return true;
+      if (reply.includes("no")) return false;
+      return true;
+
     } catch (err) {
       console.error("⚠️ Gemini classification error:", err);
-      return false; // fallback safe
+      // Fallback safe: assume it's analytics
+      return true;
     }
   }
 
@@ -107,7 +103,7 @@ Query: "${query}"`
       return response;
     }
 
-    // 🚫 Out-of-domain check (async hybrid check now)
+    // 🚫 Out-of-domain check (smarter now)
     const isAnalytics = await this.isDataAnalyticsQuery(query);
     if (!isAnalytics && dataset.length === 0) {
       const response = {
