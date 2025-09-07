@@ -2,121 +2,146 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 class GeminiService {
   private model;
+  private chatHistory: { role: "user" | "model"; content: string }[] = [];
+  private lastChart: any = null;
 
   constructor() {
-    // 🔑 Hardcoded API Key (replace with yours)
-    const apiKey = "YOUR_GEMINI_API_KEY";
-
-    if (!apiKey) {
-      throw new Error("Gemini API key is missing.");
-    }
+    const apiKey = "AIzaSyA6akDT02z4sS-y2H48RtxpuLpR3ahwifg"; // 🔑 put your Gemini API key here
+    if (!apiKey) throw new Error("Gemini API key is missing.");
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    this.model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   }
 
-  // 👋 Casual conversation detection
+  // 👋 Casual conversation check
   private isCasualConversation(query: string): boolean {
-    const casual = [
-      "hi", "hello", "hey", "good morning", "good evening",
-      "how are you", "i am fine", "thanks", "thank you", "thank u",
-      "what's up", "ok", "okay", "cool", "nice", "bye", "goodbye",
-      "see you", "take care"
+    const casualKeywords = [
+      "hi","hello","hey","thanks","thank you",
+      "ok","okay","good morning","good evening","good night",
+      "how are you","bye","see you","take care"
     ];
-    const q = query.toLowerCase().trim();
-    return casual.some((c) => q.includes(c));
+    return casualKeywords.some((kw) => query.toLowerCase().includes(kw));
   }
 
-  // 📊 Analytics-related queries
+  // 📊 Analytics query check
   private isDataAnalyticsQuery(query: string): boolean {
     const keywords = [
-      "data", "analytics", "analysis", "statistics", "dataset", "database",
-      "visualization", "chart", "graph", "dashboard", "reporting", "metrics",
-      "sql", "python", "pandas", "numpy", "matplotlib", "seaborn",
-      "tableau", "power bi", "excel", "regression", "correlation", "clustering",
-      "machine learning", "forecasting", "trend", "pattern",
-      "business intelligence", "etl", "data warehouse", "data mining", "big data",
-      "spark", "mongodb", "postgresql", "mysql", "snowflake",
-      "data science", "hypothesis testing", "a/b testing",
-      "confidence interval", "data cleaning", "feature engineering",
+      "data","analytics","analysis","statistics","dataset","table",
+      "visualization","chart","graph","dashboard","reporting",
+      "sql","python","excel","tableau","power bi",
+      "regression","forecasting","trend","pattern","insights"
     ];
-    const q = query.toLowerCase();
-    return keywords.some((kw) => q.includes(kw));
+    return keywords.some((kw) => query.toLowerCase().includes(kw));
   }
 
+  // 🔎 Detect chart keys
+  private detectKeys(dataset: any[]): { xKey: string; yKey: string } {
+    if (!dataset || dataset.length === 0) return { xKey: "x", yKey: "y" };
+    const sample = dataset[0];
+    const keys = Object.keys(sample);
+    let xKey = keys[0], yKey = keys[1] || keys[0];
+    for (const k of keys) {
+      if (typeof sample[k] === "string") xKey = k;
+      if (typeof sample[k] === "number") yKey = k;
+    }
+    return { xKey, yKey };
+  }
+
+  // 🧠 Generate response
   async generateResponse(
-    query: string
-  ): Promise<{ answer: string; followUps: string[] }> {
-    // 👋 Casual chit-chat
+    query: string,
+    dataset: any[] = [],
+    fileName: string | null = null
+  ): Promise<{ answer: string; followUps: string[]; type: string; chart?: any }> {
+
+    // Save user query
+    this.chatHistory.push({ role: "user", content: query });
+
+    // 👋 Casual conversation
     if (this.isCasualConversation(query)) {
+      const response = {
+        answer: "👋 Hey there! I’m your Data Analytics Assistant.",
+        followUps: ["📊 Show me a bar chart example", "📈 Sales trend?", "🗂️ Upload dataset?"],
+        type: "casual"
+      };
+      this.chatHistory.push({ role: "model", content: response.answer });
+      return response;
+    }
+
+    // 🔄 Reuse last chart when asked "above/previous values"
+    if (dataset.length === 0 && /above|previous|earlier|that data/i.test(query) && this.lastChart) {
+      const response = {
+        answer: "✅ Using the previously shared dataset to create your chart.",
+        followUps: ["📈 Show as line chart", "🟠 Show as pie chart", "🔄 Compare with another column"],
+        type: "analytics",
+        chart: this.lastChart
+      };
+      this.chatHistory.push({ role: "model", content: response.answer });
+      return response;
+    }
+
+    // 📂 If dataset uploaded → build chart
+    if (dataset.length > 0) {
+      const { xKey, yKey } = this.detectKeys(dataset);
+      this.lastChart = { type: "bar", data: dataset, xKey, yKey };
+
+      const response = {
+        answer: `✅ Here’s a chart based on your uploaded file **${fileName || "dataset"}**.`,
+        followUps: ["📈 Line chart?", "🟠 Pie chart?", "📊 Compare columns?"],
+        type: "analytics",
+        chart: this.lastChart
+      };
+      this.chatHistory.push({ role: "model", content: response.answer });
+      return response;
+    }
+
+    // 🤖 Query Gemini with history
+    try {
+      const result = await this.model.generateContent({
+        contents: this.chatHistory.map(m => ({
+          role: m.role,
+          parts: [{ text: m.content }]
+        }))
+      });
+
+      let rawText = result.response.text();
+      rawText = rawText.replace(/```json|```/g, "").trim();
+
+      let chart: any = undefined;
+      const chartMatch = rawText.match(/CHART:\s*({[\s\S]*?})/);
+      if (chartMatch) {
+        try { chart = JSON.parse(chartMatch[1]); this.lastChart = chart; } catch {}
+      }
+
+      let followUps: string[] = [];
+      const followMatch = rawText.match(/FOLLOW_UPS:\s*(\[.*\])/s);
+      if (followMatch) {
+        try { followUps = JSON.parse(followMatch[1]); } catch {}
+      }
+
+      const cleanAnswer = rawText
+        .replace(/CHART:\s*{[\s\S]*?}/, "")
+        .replace(/FOLLOW_UPS:\s*\[.*\]/s, "")
+        .trim();
+
+      const response = {
+        answer: cleanAnswer || "✅ Here’s an insight!",
+        followUps: followUps.length ? followUps : ["📊 Bar chart?", "📈 Line chart?", "🟠 Pie chart?"],
+        type: "analytics",
+        chart
+      };
+
+      this.chatHistory.push({ role: "model", content: response.answer });
+      return response;
+
+    } catch (error) {
+      console.error("❌ Gemini API error:", error);
       return {
-        answer: "😊 I’m here! Always happy to chat. Do you want to dive into data analytics?",
-        followUps: [], // no follow-ups for casual
+        answer: "⚠️ Something went wrong.",
+        followUps: ["📊 Bar chart?", "📈 Line chart?", "🟠 Pie chart?"],
+        type: "error"
       };
     }
-
-    // 📊 Analytics queries
-    if (this.isDataAnalyticsQuery(query)) {
-      try {
-        const result = await this.model.generateContent({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `
-You are a specialized Data Analytics Expert Chatbot.
-
-Instructions:
-- Provide a clear, structured, professional answer.
-- Use emojis/icons for clarity (📊, ✅, ⚠️).
-- Avoid markdown symbols (#, *, **).
-- After answering, suggest 3 short follow-up questions.
-- Format follow-ups in JSON array like:
-FOLLOW_UPS: ["Question 1", "Question 2", "Question 3"]
-
-Now answer this query:
-
-${query}
-                  `,
-                },
-              ],
-            },
-          ],
-        });
-
-        const rawText = result.response.text();
-
-        // Extract follow-ups
-        let followUps: string[] = [];
-        const match = rawText.match(/FOLLOW_UPS:\s*(\[.*\])/);
-        if (match) {
-          try {
-            followUps = JSON.parse(match[1]);
-          } catch (err) {
-            console.warn("⚠️ Failed to parse follow-ups:", err);
-          }
-        }
-
-        // Clean the main answer
-        const cleanAnswer = rawText.replace(/FOLLOW_UPS:\s*\[.*\]/, "").trim();
-
-        return { answer: cleanAnswer, followUps };
-      } catch (error) {
-        console.error("❌ Error calling Gemini API:", error);
-        return {
-          answer: "⚠️ I encountered an error while generating a response.",
-          followUps: [],
-        };
-      }
-    }
-
-    // ❌ Block unrelated queries
-    return {
-      answer:
-        "⚠️ I can help only with **data analytics** or friendly chat (hi, hello, thank you, etc.). Try asking me about statistics, visualization, BI, or machine learning!",
-      followUps: [],
-    };
   }
 }
 

@@ -1,25 +1,28 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, BarChart3, RefreshCw } from 'lucide-react';
-import { Message } from '../types';
-import { MessageBubble } from './MessageBubble';
-import { LoadingBubble } from './LoadingBubble';
-import { geminiService } from '../services/geminiService';
+import React, { useState, useRef, useEffect } from "react";
+import { BarChart3, RefreshCw } from "lucide-react";
+import { Message } from "../types";
+import { MessageBubble } from "./MessageBubble";
+import { LoadingBubble } from "./LoadingBubble";
+import { ChartRenderer } from "./ChartRenderer";
+import { geminiService } from "../services/geminiService";
+import { ChatInput } from "./ChatInput";
+import * as XLSX from "xlsx"; // ✅ Excel support
 
 const STORAGE_KEY = "chat-history";
 
 export const ChatInterface: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([getInitialMessage()]);
-  const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadedDataset, setUploadedDataset] = useState<any[]>([]);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   function getInitialMessage(): Message {
     return {
-      id: '1',
+      id: "1",
       content:
         "👋 Hello! I'm your Data Analytics AI Assistant. I specialize in statistics, visualization, business intelligence, and data science. What would you like to explore?",
-      role: 'assistant',
+      role: "assistant",
       timestamp: new Date(),
       followUps: [
         "How do I clean messy datasets?",
@@ -29,42 +32,47 @@ export const ChatInterface: React.FC = () => {
     };
   }
 
-  // Save chat for this session only
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
   }, [messages]);
 
-  // Auto scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  // Clear previous session history on mount
   useEffect(() => {
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  const sendMessage = async (query: string) => {
+  const sendMessage = async (
+    query: string,
+    dataset: any[] = uploadedDataset,
+    fileName: string | null = uploadedFileName
+  ) => {
     const userMessage: Message = {
       id: Date.now().toString(),
       content: query,
-      role: 'user',
+      role: "user",
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
-    setInputValue('');
 
     try {
-      const { answer, followUps } = await geminiService.generateResponse(query);
+      const { answer, followUps, chart } = await geminiService.generateResponse(
+        query,
+        dataset,
+        fileName
+      );
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: answer,
-        role: 'assistant',
+        role: "assistant",
         timestamp: new Date(),
         followUps,
+        chart,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -75,25 +83,81 @@ export const ChatInterface: React.FC = () => {
           id: (Date.now() + 1).toString(),
           content:
             "⚠️ Sorry, something went wrong while fetching the response. Please try again.",
-          role: 'assistant',
+          role: "assistant",
           timestamp: new Date(),
         },
       ]);
     } finally {
       setIsLoading(false);
-      inputRef.current?.focus();
     }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
-    sendMessage(inputValue.trim());
   };
 
   const clearConversation = () => {
     setMessages([getInitialMessage()]);
+    setUploadedDataset([]);
+    setUploadedFileName(null);
     localStorage.removeItem(STORAGE_KEY);
+  };
+
+  // ✅ Fixed file upload (CSV, JSON, Excel support)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    let dataset: any[] = [];
+
+    try {
+      if (file.name.endsWith(".json")) {
+        const text = await file.text();
+        dataset = JSON.parse(text);
+      } else if (file.name.endsWith(".csv")) {
+        const text = await file.text();
+        const [headerLine, ...lines] = text.trim().split("\n");
+        const headers = headerLine.split(",");
+        dataset = lines.map((line) => {
+          const values = line.split(",");
+          const row: Record<string, any> = {};
+          headers.forEach((h, i) => {
+            const num = parseFloat(values[i]);
+            row[h.trim()] = isNaN(num) ? values[i] : num;
+          });
+          return row;
+        });
+      } else if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
+        const data = new Uint8Array(await file.arrayBuffer());
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        dataset = XLSX.utils.sheet_to_json(sheet);
+      }
+    } catch (err) {
+      console.error("❌ Failed to parse file:", err);
+    }
+
+    setUploadedDataset(dataset);
+    setUploadedFileName(file.name);
+
+    let preview = `📂 Uploaded file: **${file.name}**\n\n`;
+    if (dataset.length > 0) {
+      preview += `Parsed **${dataset.length} rows**. Example:\n\`\`\`json\n${JSON.stringify(
+        dataset.slice(0, 3),
+        null,
+        2
+      )}\n\`\`\``;
+    } else {
+      preview +=
+        "⚠️ Could not parse dataset. Please upload valid CSV/JSON/Excel.";
+    }
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        content: preview,
+        role: "assistant",
+        timestamp: new Date(),
+      },
+    ]);
   };
 
   return (
@@ -106,7 +170,9 @@ export const ChatInterface: React.FC = () => {
               <BarChart3 className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Data Analytics AI</h1>
+              <h1 className="text-xl font-bold text-gray-900">
+                Data Analytics AI
+              </h1>
               <p className="text-sm text-gray-600">
                 Specialized in data analysis and insights
               </p>
@@ -128,24 +194,15 @@ export const ChatInterface: React.FC = () => {
         <div className="max-w-4xl mx-auto">
           {messages.map((message) => (
             <div key={message.id} className="mb-4">
-              <MessageBubble message={message} />
-
-              {/* Follow-up suggestions */}
-              {message.role === 'assistant' &&
-                message.followUps &&
-                message.followUps.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {message.followUps.map((q, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => sendMessage(q)}
-                        className="text-sm px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <MessageBubble message={message} onFollowUpClick={sendMessage} />
+              {message.role === "assistant" && message.chart && (
+                <ChartRenderer
+                  type={message.chart.type}
+                  data={message.chart.data}
+                  xKey={message.chart.xKey}
+                  yKey={message.chart.yKey}
+                />
+              )}
             </div>
           ))}
 
@@ -157,29 +214,15 @@ export const ChatInterface: React.FC = () => {
       {/* Input */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
         <div className="max-w-4xl mx-auto">
-          <form onSubmit={handleSubmit} className="flex gap-4">
-            <div className="flex-1">
-              <input
-                ref={inputRef}
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Ask about data analysis, statistics, visualization..."
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                disabled={isLoading}
-                autoFocus
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={!inputValue.trim() || isLoading}
-              className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
-            >
-              <Send size={20} />
-            </button>
-          </form>
+          {/* ✅ ChatInput with file upload */}
+          <ChatInput
+            onSend={(text) => sendMessage(text)}
+            onFileUpload={handleFileUpload}
+          />
+
           <div className="mt-2 text-xs text-gray-500 text-center">
-            This AI specializes in data analytics. Ask about statistics, visualization, BI, and more.
+            This AI specializes in data analytics. You can also upload
+            CSV/JSON/Excel files for analysis.
           </div>
         </div>
       </div>

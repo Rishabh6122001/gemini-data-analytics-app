@@ -1,7 +1,20 @@
+export interface ChartData {
+  type: "bar" | "line" | "pie" | "scatter" | "area"; // extended chart types
+  data: any[];
+  xKey: string;
+  yKey: string;
+}
+
 export interface Message {
   id: string;
-  content: string;
   role: "user" | "assistant";
   timestamp: Date;
-  followUps?: string[]; // ✅ optional follow-up questions
+
+  // Text parts
+  content?: string;   // for user raw input
+  answer?: string;    // for assistant structured response
+
+  // Extras
+  followUps?: string[];
+  chart?: ChartData;
 }
