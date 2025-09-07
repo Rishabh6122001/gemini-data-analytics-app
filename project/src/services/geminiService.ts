@@ -6,7 +6,7 @@ class GeminiService {
   private lastChart: any = null;
 
   constructor() {
-    const apiKey = "AIzaSyA6akDT02z4sS-y2H48RtxpuLpR3ahwifg"; // 🔑 replace with your Gemini API key
+    const apiKey = "AIzaSyA6akDT02z4sS-y2H48RtxpuLpR3ahwifg"; // 🔑 replace with your Gemini API key 
     if (!apiKey) throw new Error("Gemini API key is missing.");
 
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -29,12 +29,22 @@ class GeminiService {
     return null;
   }
 
-  // 🌀 Detect gibberish
+  // 🌀 Detect gibberish (fixed)
   private isGibberish(text: string): boolean {
-    if (text.length < 3) return true;
-    if (!/[aeiou]/i.test(text)) return true; // no vowels
-    if (/^(.)\1{2,}$/.test(text)) return true; // repeated characters
-    if (/^[bcdfghjklmnpqrstvwxyz]{5,}$/i.test(text)) return true; // consonant mash
+    const cleaned = text.trim().toLowerCase();
+
+    // ✅ Allow common short words
+    const validShortWords = ["hi", "ok", "no", "yes", "yo", "hey", "bye", "gm", "gn", "ty"];
+    if (validShortWords.includes(cleaned)) return false;
+
+    if (cleaned.length < 3) return true; // too short
+    if (!/[aeiou]/.test(cleaned)) return true; // no vowels
+    if (/^(.)\1{2,}$/.test(cleaned)) return true; // same char repeated
+    if (/^[bcdfghjklmnpqrstvwxyz]{4,}$/i.test(cleaned)) return true; // only consonants
+    const consonantRatio = (cleaned.replace(/[^bcdfghjklmnpqrstvwxyz]/gi, "").length / cleaned.length);
+    if (consonantRatio > 0.7) return true; // too many consonants
+    if (/[a-z]{3,}\d+[a-z\d]*/i.test(cleaned)) return true; // nonsense mix with numbers
+
     return false;
   }
 
@@ -96,6 +106,17 @@ Query: "${query}"`
 
     this.chatHistory.push({ role: "user", content: query });
 
+    // 🚫 Gibberish check first
+    if (this.isGibberish(query)) {
+      const response = {
+        answer: "🤔 Sorry, I didn’t quite get that. Could you rephrase?",
+        followUps: ["📊 Show me a chart example", "📈 Sales trend?", "🧹 Clean messy data?"],
+        type: "gibberish"
+      };
+      this.chatHistory.push({ role: "model", content: response.answer });
+      return response;
+    }
+
     // 👋 Casual
     const casualResponse = await this.handleCasualConversation(query);
     if (casualResponse) {
@@ -103,17 +124,6 @@ Query: "${query}"`
         answer: casualResponse,
         followUps: ["📊 Show me a bar chart example", "📈 Sales trend?", "🗂️ Upload dataset?"],
         type: "casual"
-      };
-      this.chatHistory.push({ role: "model", content: response.answer });
-      return response;
-    }
-
-    // 🚫 Gibberish check
-    if (this.isGibberish(query)) {
-      const response = {
-        answer: "🤔 Sorry, I didn’t quite get that. Could you rephrase?",
-        followUps: ["📊 Show me a chart example", "📈 Sales trend?", "🧹 Clean messy data?"],
-        type: "gibberish"
       };
       this.chatHistory.push({ role: "model", content: response.answer });
       return response;
