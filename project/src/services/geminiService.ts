@@ -23,8 +23,8 @@ class GeminiService {
     return casualKeywords.some((kw) => query.toLowerCase().includes(kw));
   }
 
-  // 📊 Analytics query check (improved with concept list)
-  private isDataAnalyticsQuery(query: string): boolean {
+  // 📊 Hybrid Analytics Query Check (keywords + Gemini fallback)
+  private async isDataAnalyticsQuery(query: string): Promise<boolean> {
     const text = query.toLowerCase();
 
     // Core concepts in statistics / data science
@@ -49,7 +49,28 @@ class GeminiService {
       "trend","pattern","insight","model"
     ];
 
-    return keywords.some((kw) => text.includes(kw));
+    if (keywords.some((kw) => text.includes(kw))) {
+      return true;
+    }
+
+    // 🔮 Ask Gemini if still unsure
+    try {
+      const check = await this.model.generateContent({
+        contents: [{
+          role: "user",
+          parts: [{
+            text: `Classify the following query strictly as YES (analytics-related) or NO (not analytics-related).
+Query: "${query}"`
+          }]
+        }]
+      });
+
+      const reply = check.response.text().toLowerCase();
+      return reply.includes("yes");
+    } catch (err) {
+      console.error("⚠️ Gemini classification error:", err);
+      return false; // fallback safe
+    }
   }
 
   // 🔎 Detect chart keys
@@ -86,8 +107,9 @@ class GeminiService {
       return response;
     }
 
-    // 🚫 Out-of-domain check
-    if (!this.isDataAnalyticsQuery(query) && dataset.length === 0) {
+    // 🚫 Out-of-domain check (async hybrid check now)
+    const isAnalytics = await this.isDataAnalyticsQuery(query);
+    if (!isAnalytics && dataset.length === 0) {
       const response = {
         answer: "⚡ Oops, that’s outside my scope!\nI can only help with data analytics, charts, insights, and statistics.",
         followUps: ["📊 Show me a bar chart", "📈 Visualize sales trends", "🧹 How do I clean messy data?"],
