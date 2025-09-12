@@ -6,7 +6,7 @@ class GeminiService {
   private lastChart: any = null;
 
   constructor() {
-    const apiKey = "AIzaSyA6akDT02z4sS-y2H48RtxpuLpR3ahwifg"; // 🔑 replace with your Gemini API key 
+    const apiKey = "AIzaSyBtfINXuN8-3aDQKNJneRxLtI8-rgNt_Gs"; // 🔑 replace with your Gemini API key 
     if (!apiKey) throw new Error("Gemini API key is missing.");
 
     const genAI = new GoogleGenerativeAI(apiKey);
